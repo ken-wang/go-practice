@@ -1,20 +1,19 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
-func execute(dir string, channel chan string) {
-	cmd := exec.Command("git", "pull")
-	cmd.Dir = dir
-	stdout, _ := cmd.CombinedOutput()
+func execute(cmd *exec.Cmd, project string, channel chan<- string) {
 
-	project := dir[strings.LastIndex(dir, "/")+1:]
+	stdout, _ := cmd.CombinedOutput()
 	result := project + "\n" + string(stdout)
 	channel <- result
 }
@@ -29,22 +28,28 @@ func trace() func() {
 func main() {
 	defer trace()()
 
+	flag.Parse()
+	commands := flag.Args()
+	fmt.Println("Command:", strings.Join(flag.Args(), " "))
+
 	root, _ := os.Getwd()
-	files, _ := ioutil.ReadDir(root)
+	entries, _ := ioutil.ReadDir(root)
 
 	count := 0
-	channel := make(chan string, len(files))
+	channel := make(chan string, len(entries))
 
-	for _, file := range files {
-		if file.IsDir() {
-			path := root + "/" + file.Name()
+	for _, entry := range entries {
+		if entry.IsDir() {
+			path := filepath.Join(root, entry.Name())
 			if _, err := os.Stat(path + "/.git"); err == nil {
+				cmd := exec.Command(commands[0], strings.Join(commands[1:], " "))
+				cmd.Dir = path
+				go execute(cmd, entry.Name(), channel)
 				count++
-				go execute(path, channel)
 			}
 		}
 	}
-	fmt.Println("count:", count)
+
 	for i := count; i > 0; i-- {
 		result := <-channel
 		fmt.Println(result)
